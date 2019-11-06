@@ -1229,7 +1229,11 @@ struct rwm_encrypt_decrypt_tmp  {
   int left;
   int block_size;
   struct raw_message *raw;
-  EVP_CIPHER_CTX *evp_ctx;
+  struct tg_aes_ctx *ctx;
+  void (*crypt)(struct tg_aes_ctx *, const void *, void *, int, unsigned char *, void *, void *);
+  unsigned char *iv;
+  void *extra;
+  void *extra2;
   char buf[16] __attribute__((aligned(16)));
 };
 
@@ -1257,12 +1261,12 @@ int rwm_process_encrypt_decrypt (struct rwm_encrypt_decrypt_tmp *x, const void *
       data += to_fill;
       x->bp = 0;     
       if (x->buf_left >= bsize) {
-        evp_crypt (x->evp_ctx, x->buf, res->last->part->data + res->last_offset, bsize);
+        x->crypt (x->ctx, x->buf, res->last->part->data + res->last_offset, bsize, x->iv, x->extra, x->extra2);
         res->last->data_end += bsize;
         res->last_offset += bsize;
         x->buf_left -= bsize;
       } else {
-        evp_crypt (x->evp_ctx, x->buf, x->buf, bsize);
+        x->crypt (x->ctx, x->buf, x->buf, bsize, x->iv, x->extra, x->extra2);
         memcpy (res->last->part->data + res->last_offset, x->buf, x->buf_left);
         int t = x->buf_left;
         res->last->data_end += t;
@@ -1312,7 +1316,7 @@ int rwm_process_encrypt_decrypt (struct rwm_encrypt_decrypt_tmp *x, const void *
     assert (x->buf_left + res->last_offset <= res->last->part->chunk->buffer_size);
     if (len <= x->buf_left) {
       assert (!(len & (bsize - 1)));
-      evp_crypt (x->evp_ctx, data, (res->last->part->data + res->last_offset), len);
+      x->crypt (x->ctx, data, (res->last->part->data + res->last_offset), len, x->iv, x->extra, x->extra2);
       res->last->data_end += len;
       res->last_offset += len;
       res->total_bytes += len;
@@ -1320,7 +1324,7 @@ int rwm_process_encrypt_decrypt (struct rwm_encrypt_decrypt_tmp *x, const void *
       return 0;
     } else {
       int t = x->buf_left & -bsize;
-      evp_crypt (x->evp_ctx, data, res->last->part->data + res->last_offset, t);
+      x->crypt (x->ctx, data, res->last->part->data + res->last_offset, t, x->iv, x->extra, x->extra2);
       res->last->data_end += t;
       res->last_offset += t;
       res->total_bytes += t;
@@ -1332,7 +1336,7 @@ int rwm_process_encrypt_decrypt (struct rwm_encrypt_decrypt_tmp *x, const void *
 }
 
 
-int rwm_encrypt_decrypt_to (struct raw_message *raw, struct raw_message *res, int bytes, EVP_CIPHER_CTX *evp_ctx, int block_size) {
+int rwm_encrypt_decrypt_to (struct raw_message *raw, struct raw_message *res, int bytes, struct tg_aes_ctx *ctx, void (*crypt)(struct tg_aes_ctx *ctx, const void *src, void *dst, int l, unsigned char *iv, void *extra, void *extra2), unsigned char *iv, int block_size, void *extra, void *extra2) {
   assert (bytes >= 0);
   assert (block_size && !(block_size & (block_size - 1)));
   if (bytes > raw->total_bytes) {
@@ -1361,14 +1365,18 @@ int rwm_encrypt_decrypt_to (struct raw_message *raw, struct raw_message *res, in
   }
   struct rwm_encrypt_decrypt_tmp t;
   t.bp = 0;
+  t.crypt = crypt;
   if (res->last->part->refcnt == 1) {
     t.buf_left = res->last->part->chunk->buffer_size - res->last_offset;
   } else {
     t.buf_left = 0;
   }
   t.raw = res;
-  t.evp_ctx = evp_ctx;
+  t.ctx = ctx;
+  t.iv = iv;
   t.left = bytes;
+  t.extra = extra;
+  t.extra2 = extra2;
   t.block_size = block_size;
   int r = rwm_process_and_advance (raw, bytes, (void *)rwm_process_encrypt_decrypt, &t);
   if (locked) {

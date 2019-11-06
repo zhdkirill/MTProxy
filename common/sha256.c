@@ -18,11 +18,8 @@
               2016 Nikolai Durov
 */
 
-#include "sha256.h"
-
 #include <assert.h>
-
-#include <openssl/hmac.h>
+#include "sha256.h"
 
 void sha256_starts (sha256_context *ctx) {
   EVP_MD_CTX_init (ctx);
@@ -54,11 +51,4 @@ void sha256_two_chunks (const unsigned char *input1, int ilen1, const unsigned c
   sha256_update (ctx, input2, ilen2);
   sha256_finish (ctx, output);
   EVP_MD_CTX_free (ctx);
-}
-
-void sha256_hmac (unsigned char *key, int keylen, unsigned char *input, int ilen, unsigned char output[32]) {
-  unsigned int len = 0;
-  unsigned char *result = HMAC(EVP_sha256(), key, keylen, input, ilen, output, &len);
-  assert (result == output);
-  assert (len == 32);
 }

@@ -87,6 +87,11 @@ static int default_parse_option (int val) {
 
 /* {{{ SIGNAL ACTIONS */
 static void default_sighup (void) {
+  int res = do_reload_config (0x4);
+
+  if (res < 0) {
+    fprintf (stderr, "config check failed! (code %d)\n", res);
+  }
 }
 
 static void default_sigusr1 (void) {
@@ -685,7 +690,7 @@ static void parse_option_engine_builtin (const char *name, int arg, int *var, in
   assert (vasprintf (&h, help, ap) >= 0);
   va_end (ap);
 
-  parse_option_ex (name, arg, var, val, flags, f_parse_option_engine, "%s", h);
+  parse_option_ex (name, arg, var, val, flags, f_parse_option_engine, h);
 
   free (h);
 }
